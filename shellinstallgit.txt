@@ -1,0 +1,13 @@
+ssh-keygen -t rsa -C “zhiyanzhai563@163.com”
+vi /root/.ssh/id_rsa.pub
+ssh -T -v  git@github.com
+ssh -T   git@github.com
+git config --global user.name "hang.xu"
+git clone git@github.com:xuhang563/learnning.git
+echo "# learnning" >> README.md
+sudo /etc/init.d/networking restart
+git reset HEAD^
+git commit --amend
+git reset HEAD^
+git push origin master
+git push origin --force --all

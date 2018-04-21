@@ -30,6 +30,27 @@ bool CLFrameWnd::PreCreateWindow(){
 }
 
 extern CMyWinApp theApp;
+static char szCObject[]="CLObject";
+struct CLRuntimeClass CLObject::classCLObject=
+{szCObject,sizeof(CLObject),0xffff,NULL,NULL,NULL};
+static ALFX_CLASSINIT _init_CObject(&CLObject::classCLObject);
+CLRuntimeClass*CLRuntimeClass::pFirstClass=NULL;
+ALFX_CLASSINIT::ALFX_CLASSINIT(CLRuntimeClass*pNewClass){
+	pNewClass->m_pNextClass=CLRuntimeClass::pFirstClass;
+	CLRuntimeClass::pFirstClass=pNewClass;
+}
+CLRuntimeClass*CLObject::GetRuntimeClass() const {
+	return &CLObject::classCLObject;
+}
+
+ILMPLEMENT_DYNAMIC(CLCmdTarget,CLObject)     //一方面声明了很多静态的名称;
+ILMPLEMENT_DYNAMIC(CLWinThread,CLCmdTarget)
+ILMPLEMENT_DYNAMIC(CLWindApp,CLWinThread)
+ILMPLEMENT_DYNAMIC(CLWnd,CLCmdTarget)
+ILMPLEMENT_DYNAMIC(CLFrameWnd,CLWnd)
+ILMPLEMENT_DYNAMIC(CLDocument,CLCmdTarget)
+ILMPLEMENT_DYNAMIC(CLView,CLWnd)
+
 CLWindApp*AdfxGetApp(){
 	return theApp.m_pCurrentWinApp;
 }
