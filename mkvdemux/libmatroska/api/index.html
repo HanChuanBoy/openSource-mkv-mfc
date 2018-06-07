@@ -1,0 +1,38 @@
+<!DOCTYPE html  PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>libmatroska - API</title>
+<meta name="GENERATOR" content="SciTE - www.Scintilla.org" />
+<meta name="Author" content="Steve Lhomme" />
+<style type="text/css">
+body {
+	font-family: Helvetica, Arial;
+	color: #000000;
+}
+h1 {
+	font-family: Tahoma;
+	font-size: x-large;
+}
+</style>
+</head>
+<body>
+<h1>libmatroska - API</h1>
+<p>It should be possible to use libmatroska from many languages.</p>
+<p>Currently there is the following languages supported :</p>
+<ul>
+<li><a href="c/index.html" title="browse the C API information page">standard C</a> (early alpha), supported platforms so far :
+	<ul>
+	<li>win32 (DLL &amp; static library)</li>
+	<li>cygwin (shared object &amp; static lib)</li>
+	<li>linux (shared object &amp; static lib)</li>
+</ul></li>
+<li>standard C++ (based on the C API) (too early)</li>
+<li>COM object (through DirectShow?) (too early, see Ingo Ralf Blum)</li>
+</ul>
+<p>Most API support should be based on the C API as it is the most portable one and it is included in the core of the library.</p>
+<p>Other API should either call the standard libmatroska (using the C API) or creating a new module compiled with the C++ core of the library, but using a different name than the standard one.</p>
+<p>Other API could become official and so be located in /src/api/&lt;language&gt; of the CVS source tree.<p>
+<br/>
+<p align="center">back to the <a href="http://matroska.sourceforge.net/">Matroska home page</a></p>
+</body>
+</html>

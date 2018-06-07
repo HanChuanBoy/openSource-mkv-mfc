@@ -1,0 +1,13 @@
+; kaxdemux.DEF
+;
+; This file provides declarations of the entrypoints in
+; the DLL.
+
+LIBRARY         "kaxdemux.DLL"
+DESCRIPTION     'Custom DXMedia Filter Collection'
+EXPORTS
+    DllGetClassObject   PRIVATE
+    DllCanUnloadNow     PRIVATE
+    DllRegisterServer   PRIVATE
+    DllUnregisterServer PRIVATE
+
