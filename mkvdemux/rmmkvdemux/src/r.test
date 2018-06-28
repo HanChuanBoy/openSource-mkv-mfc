@@ -1,0 +1,161 @@
+ifneq '$(filter -DEM86XX_MODE=EM86XX_MODEID_STANDALONE,$(RMCFLAGS))' ''
+
+RMCFLAGS += -DEM86XX_REMOTE=1
+
+ifneq '$(filter -DEM86XX_CHIP=EM86XX_CHIPID_TANGO2,$(RMCFLAGS))' ''
+
+CROSS      := mipsel-linux-
+RMPLATFORM := RMPLATFORMID_TANGO2
+COMPILKIND += withdl
+lib_ext    := so
+
+else # EM86XX_CHIPID_TANGO2
+
+CROSS      := arm-elf-
+RMPLATFORM := RMPLATFORMID_JASPERMAMBO
+RMCFLAGS   += -DLLAD_DIRECT -D__arm__ -I../include
+LDFLAGS    += -L$(PREFIX)/lib -liconv -lz -lmatroska -lebml -Wl,-elf2flt="-s32768" -Wl,-elf2flt="-z" 
+lib_ext    := a
+
+RMCFLAGS += \
+	-fno-rtti \
+	-I$(PREFIX)/include \
+	-I../include \
+	-I./common \
+	-I./extract \
+	-DLLAD_DIRECT -D__arm__ \
+    -D_FILE_OFFSET_BITS=64 \
+    -D_LARGEFILE_SOURCE=1 \
+    -D_LARGEFILE64_SOURCE=1
+endif # EM86XX_CHIPID_TANGO2
+
+else # EM86XX_MODEID_STANDALONE
+ifneq '$(filter -DEM86XX_MODE=EM86XX_MODEID_WITHHOST,$(RMCFLAGS))' ''
+
+COMPILKIND += withdl
+lib_ext := so
+
+else # EM86XX_MODEID_WITHHOST
+
+$(error EM86XX_MODE is not set in RMCFLAGS: refer to emhwlib/include/emhwlib_modes.h)
+
+endif # EM86XX_MODEID_WITHHOST
+endif # EM86XX_MODEID_STANDALONE
+
+
+
+TARGET_TYPE := EXECUTABLE
+
+MAIN_SRC := test.cpp
+
+SRC := \
+	get_key.c    \
+	dbgimplementation.c \
+	rmmmimplementation.c
+
+base_dir := ../..
+
+lib_list :=  \
+    rua      \
+    llad     \
+    samples  \
+    rmvdemux \
+    rmavicore\
+    dcc
+ifneq '$(filter -DEM86XX_MODE=EM86XX_MODEID_STANDALONE,$(RMCFLAGS))' ''
+ifneq '$(filter -DEM86XX_CHIP=EM86XX_CHIPID_TANGO2,$(RMCFLAGS))' ''
+lib_list +=       \
+    rmwmdrmndstub \
+    gbus          \
+    rmdrm
+else # EM86XX_CHIPID_TANGO2
+lib_list +=       \
+    rmwmdrmnd     \
+    rmwmdrmndupnp \
+    rmwmdrmndcore
+endif # EM86XX_CHIPID_TANGO2
+else # EM86XX_MODEID_STANDALONE
+ifneq '$(filter -DEM86XX_MODE=EM86XX_MODEID_WITHHOST,$(RMCFLAGS))' ''
+lib_list +=       \
+    rmwmdrmndstub \
+    gbus          \
+    rmdrm
+else # EM86XX_MODEID_WITHHOST
+$(error EM86XX_MODE is not set in RMCFLAGS: refer to emhwlib/include/emhwlib_modes.h)
+endif # EM86XX_MODEID_WITHHOST
+endif # EM86XX_MODEID_STANDALONE
+lib_list +=             \
+    rmcore              \
+    rmjpeg              \
+    rmpng               \
+    rmungif             \
+    rmzlib              \
+    rmhttp              \
+    rmscc               \
+    rmrtk86             \
+    rmmp4api            \
+    rmmp4               \
+    rmmp4core           \
+    rmdescriptordecoder \
+    rmmpeg4framework    \
+    rmcpputils          \
+    rmasfdemux          \
+    rmasfdemuxcore      \
+    rmcw                \
+	rmpthreadw			\
+    rmdetectorapi       \
+    rmdetector          \
+    rmdetector3         \
+    rmdetector3api      \
+    rmremote            \
+    rmcdfs              \
+    rmwmaprodecoder     \
+    rmwmaprodecodercore \
+    rmec3transcoder
+
+lib_list += rmmkvdemux
+
+ifneq '$(filter -DEM86XX_CHIP=EM86XX_CHIPID_TANGO2,$(RMCFLAGS))' '' 
+lib_list += \
+    rmdtcpinterface
+else
+lib_list += \
+    rmdtcp  \
+    rmsymboltable
+endif
+
+ifeq '$(filter -DWITHOUT_NERO_SPU=1, $(RMCFLAGS))' ''
+lib_list += \
+    ndsp
+endif
+
+ifneq '$(filter -DWITH_BSAC=1, $(RMCFLAGS))' ''
+lib_list += \
+    bsac_dec_dsp
+endif
+
+STATIC_LINKS_WITH := $(addprefix $(base_dir)/lib/lib,$(addsuffix .$(lib_ext),$(lib_list) $(extra_lib_list)))
+
+LINKER := g++
+RMCFLAGS += \
+	-I$(PREFIX)/include \
+	-I../include \
+	-I../../samples \
+    -DWITH_MONO \
+    -DRMVDEMUX_LOCAL_RMOBJECT=1 \
+    -DBASIC_MPEG4_FRAMEWORK=1 \
+    -DBASIC_DETECTOR_FRAMEWORK=1 \
+    -D_FILE_OFFSET_BITS=64 \
+    -DWITH_RM_FILE_JPEG=1
+
+export RMPLATFORM
+export RMCFLAGS
+export CROSS
+
+USE_STD_LIB := 1
+NO_LIB_SUBDIR := 1
+DISABLE_WARNINGS=1
+COMPILKIND    += withthreads
+
+include $(base_dir)/scripts/inc.Makefile
+

@@ -1,0 +1,89 @@
+K 25
+svn:wc:ra_dav:version-url
+V 89
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src
+END
+rmmmimplementation.c
+K 25
+svn:wc:ra_dav:version-url
+V 110
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/rmmmimplementation.c
+END
+test.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 98
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/test.cpp
+END
+rmmkvdemuxwrapper.c
+K 25
+svn:wc:ra_dav:version-url
+V 109
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/rmmkvdemuxwrapper.c
+END
+Makefile.play
+K 25
+svn:wc:ra_dav:version-url
+V 103
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/Makefile.play
+END
+Makefile.x86
+K 25
+svn:wc:ra_dav:version-url
+V 102
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/Makefile.x86
+END
+dbgimplementation.c
+K 25
+svn:wc:ra_dav:version-url
+V 109
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/dbgimplementation.c
+END
+play_mkv.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 102
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/play_mkv.cpp
+END
+get_key.c
+K 25
+svn:wc:ra_dav:version-url
+V 99
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/get_key.c
+END
+mkvextract.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 104
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/mkvextract.cpp
+END
+Makefile.test
+K 25
+svn:wc:ra_dav:version-url
+V 103
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/Makefile.test
+END
+rmmkv.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 99
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/rmmkv.cpp
+END
+get_key.h
+K 25
+svn:wc:ra_dav:version-url
+V 99
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/get_key.h
+END
+Makefile
+K 25
+svn:wc:ra_dav:version-url
+V 98
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/Makefile
+END
+mkvextract.h
+K 25
+svn:wc:ra_dav:version-url
+V 102
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/mkvextract.h
+END

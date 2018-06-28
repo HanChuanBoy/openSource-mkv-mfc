@@ -1,0 +1,58 @@
+ifneq '$(findstring -DEM86XX_MODE=EM86XX_MODEID_STANDALONE,$(RMCFLAGS))' ''
+
+ifneq '$(findstring -DEM86XX_CHIP=EM86XX_CHIPID_TANGO2,$(RMCFLAGS))' ''
+
+TARGET_TYPE = SHARED_LIBRARY
+TARGET      := librmmkvdemux.so
+
+CROSS      = mipsel-linux-
+RMPLATFORM = RMPLATFORMID_TANGO2
+
+else
+
+TARGET_TYPE := OBJECT_LIBRARY
+TARGET      := librmmkvdemux.a
+
+CROSS = arm-elf-
+RMPLATFORM = RMPLATFORMID_JASPERMAMBO
+RMCFLAGS += \
+	-fno-rtti \
+	-I$(PREFIX)/include \
+	-I../include \
+	-I./common \
+	-I./extract \
+	-DWITH_MONO=1 \
+	-DLLAD_DIRECT -D__arm__ \
+    -D_FILE_OFFSET_BITS=64 \
+    -D_LARGEFILE_SOURCE=1 \
+    -D_LARGEFILE64_SOURCE=1
+
+LDFLAGS += -Wl,-elf2flt="-s32768"
+
+endif
+
+export CROSS
+export RMPLATFORM
+
+USE_STD_LIB=1
+DISABLE_WARNINGS=1
+COMPILKIND    += withthreads
+
+else
+ifneq '$(findstring -DEM86XX_MODE=EM86XX_MODEID_WITHHOST,$(RMCFLAGS))' ''
+
+TARGET_TYPE := SHARED_LIBRARY
+TARGET      := librmmkvdemux.so
+
+else
+
+$(error EM86XX_MODE is not set in RMCFLAGS: refer to emhwlib/include/emhwlib_modes.h)
+
+endif
+endif
+
+SRC               = rmmkv.cpp rmmkvdemuxwrapper.c play_mkv.cpp
+STATIC_LINKS_WITH = common/libmkvcommon.a extract/libmkvextract.a
+
+base_dir := ../..
+include $(base_dir)/scripts/inc.Makefile

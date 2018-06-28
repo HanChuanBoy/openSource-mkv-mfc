@@ -1,0 +1,1623 @@
+/*
+   mkvmerge -- utility for splicing together matroska files
+   from component media subtypes
+
+   Distributed under the GPL
+   see the file COPYING for details
+   or visit http://www.gnu.org/copyleft/gpl.html
+
+   $Id: mm_io.cpp 3198 2006-03-02 19:52:19Z mosu $
+
+   IO callback class implementation
+
+   Written by Moritz Bunkus <moritz@bunkus.org>.
+   Modifications by Peter Niemayer <niemayer@isg.de>.
+*/
+
+#include "os.h"
+
+#include <errno.h>
+#if HAVE_POSIX_FADVISE
+# include <fcntl.h>
+# include <sys/utsname.h>
+#endif
+#include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#if defined(SYS_WINDOWS)
+# include <windows.h>
+# include <direct.h>
+#else
+# include <unistd.h>
+# include <sys/stat.h>
+# include <sys/types.h>
+#endif // SYS_WINDOWS
+
+#include <sys/time.h>
+
+#include "error.h"
+#include "mm_io.h"
+#include "common.h"
+
+using namespace std;
+
+#if !defined(SYS_WINDOWS)
+
+static string
+get_errno_msg() {
+  return to_utf8(cc_local_utf8, strerror(errno));
+}
+
+# if HAVE_POSIX_FADVISE
+static const unsigned long read_using_willneed = 16 * 1024 * 1024;
+static const unsigned long write_before_dontneed = 8 * 1024 * 1024;
+bool mm_file_io_c::use_posix_fadvise = false;
+# endif
+
+#define FADVISE_WARNING "mm_file_io_c: Could not posix_fadvise() file '%s' " \
+  "(errno = %d, %s). " \
+  "This only means that access to this file might be slower than it could " \
+  "be. Data integrity is not in danger."
+
+mm_file_io_c::mm_file_io_c(const string &path,
+                           const open_mode mode):
+  file_name(path) {
+
+    string local_path;
+    char *cmode;
+# if HAVE_POSIX_FADVISE
+    int advise;
+
+    advise = 0;
+    read_count = 0;
+    write_count = 0;
+    use_posix_fadvise_here = use_posix_fadvise;
+# endif
+
+    switch (mode) {
+    case MODE_READ:
+        cmode = "rb";
+# if HAVE_POSIX_FADVISE
+        advise = POSIX_FADV_WILLNEED;
+# endif
+        break;
+    case MODE_WRITE:
+        cmode = "a+b";
+# if HAVE_POSIX_FADVISE
+        advise = POSIX_FADV_DONTNEED;
+# endif
+        break;
+    case MODE_CREATE:
+        cmode = "w+b";
+# if HAVE_POSIX_FADVISE
+        advise = POSIX_FADV_DONTNEED;
+# endif
+        break;
+    case MODE_SAFE:
+        cmode = "rb";
+# if HAVE_POSIX_FADVISE
+        advise = POSIX_FADV_WILLNEED;
+# endif
+        break;
+    default:
+        throw mm_io_error_c("Unknown open mode");
+    }
+
+    if ((MODE_WRITE == mode) || (MODE_CREATE == mode))
+        prepare_path(path);
+    local_path = from_utf8(cc_local_utf8, path);
+    file = (FILE *)fopen(local_path.c_str(), cmode);
+
+    if (file == NULL)
+        throw mm_io_open_error_c();
+
+# if HAVE_POSIX_FADVISE
+    if (use_posix_fadvise && use_posix_fadvise_here &&
+        (0 != posix_fadvise(fileno((FILE *)file), 0, read_using_willneed,
+                            advise))) {
+        mxverb(2, FADVISE_WARNING, path.c_str(), errno, get_errno_msg().c_str());
+        use_posix_fadvise_here = false;
+    }
+# endif
+}
+
+void
+mm_file_io_c::setFilePointer(int64 offset,
+                             seek_mode mode) {
+    int whence;
+
+    if (mode == seek_beginning)
+        whence = SEEK_SET;
+    else if (mode == seek_end)
+        whence = SEEK_END;
+    else
+        whence = SEEK_CUR;
+
+    if (fseeko((FILE *)file, offset, whence) != 0)
+        throw mm_io_seek_error_c();
+
+    if (mode == seek_beginning)
+        m_current_position = offset;
+    else if (mode == seek_end)
+        m_current_position = ftello((FILE *)file);
+    else
+        m_current_position += offset;
+}
+
+size_t
+mm_file_io_c::write(const void *buffer,
+                    size_t size) {
+    size_t bwritten;
+
+    bwritten = fwrite(buffer, 1, size, (FILE *)file);
+    if (ferror((FILE *)file) != 0)
+        mxerror("Could not write to the output file: %d (%s)\n", errno,
+                get_errno_msg().c_str());
+
+# if HAVE_POSIX_FADVISE
+    write_count += bwritten;
+    if (use_posix_fadvise && use_posix_fadvise_here &&
+        (write_count > write_before_dontneed)) {
+        uint64 pos = getFilePointer();
+        write_count = 0;
+        if (0 != posix_fadvise(fileno((FILE *)file), 0, pos,
+                               POSIX_FADV_DONTNEED)) {
+            mxverb(2, FADVISE_WARNING, file_name.c_str(), errno,
+                   get_errno_msg().c_str());
+            use_posix_fadvise_here = false;
+        }
+    }
+# endif
+
+    m_current_position += bwritten;
+
+    return bwritten;
+}
+
+uint32
+mm_file_io_c::read(void *buffer,
+                   size_t size) {
+    int64_t bread;
+    fprintf (stderr, "Alloc memory for ringbuffer!\n");
+    bread = fread(buffer, 1, size, (FILE *)file);
+    fprintf (stderr, "you\n");
+# if HAVE_POSIX_FADVISE
+    if (use_posix_fadvise && use_posix_fadvise_here && (0 <= bread)) {
+        read_count += bread;
+        if (read_count > read_using_willneed) {
+            uint64 pos = getFilePointer();
+            int fd = fileno((FILE *)file);
+            read_count = 0;
+            if (0 != posix_fadvise(fd, 0, pos, POSIX_FADV_DONTNEED)) {
+                mxverb(2, FADVISE_WARNING, file_name.c_str(), errno,
+                       get_errno_msg().c_str());
+                use_posix_fadvise_here = false;
+            }
+            if (use_posix_fadvise_here &&
+                (0 != posix_fadvise(fd, pos, pos + read_using_willneed,
+                                    POSIX_FADV_WILLNEED))) {
+                mxverb(2, FADVISE_WARNING, file_name.c_str(), errno,
+                       get_errno_msg().c_str());
+                use_posix_fadvise_here = false;
+            }
+        }
+    }
+# endif
+
+    m_current_position += bread;
+
+    return bread;
+}
+
+void
+mm_file_io_c::close() {
+    if (NULL != file) {
+        fclose((FILE *)file);
+        file = NULL;
+    }
+}
+
+bool
+mm_file_io_c::eof() {
+    return feof((FILE *)file) != 0 ? true : false;
+}
+
+int
+mm_file_io_c::truncate(int64_t pos) {
+    return ftruncate(fileno((FILE *)file), pos);
+}
+
+/** \brief OS and kernel dependant setup
+
+   The \c posix_fadvise call can improve read/write performance a lot.
+   Unfortunately it is pretty new and a buggy on a couple of Linux kernels
+   in the 2.4.x series. So only enable its usage for 2.6.x kernels.
+*/
+void
+mm_file_io_c::setup() {
+# if HAVE_POSIX_FADVISE
+    struct utsname un;
+
+    use_posix_fadvise = false;
+    if ((0 == uname(&un)) && !strcasecmp(un.sysname, "Linux")) {
+        vector<string> versions;
+        int major, minor;
+
+        versions = split(un.release, ".");
+        if ((2 <= versions.size()) &&
+            parse_int(versions[0], major) && parse_int(versions[1], minor) &&
+            ((2 < major) || (6 <= minor)))
+            use_posix_fadvise = true;
+    }
+# endif // HAVE_POSIX_FADVISE
+}
+
+#else // SYS_WINDOWS
+
+HANDLE
+CreateFileUtf8(LPCSTR lpFileName,
+               DWORD dwDesiredAccess,
+               DWORD dwShareMode,
+               LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+               DWORD dwCreationDisposition,
+               DWORD dwFlagsAndAttributes,
+               HANDLE hTemplateFile);
+
+mm_file_io_c::mm_file_io_c(const string &path,
+                           const open_mode mode) {
+    DWORD access_mode, share_mode, disposition;
+
+    switch (mode) {
+    case MODE_READ:
+        access_mode = GENERIC_READ;
+        share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
+        disposition = OPEN_EXISTING;
+        break;
+    case MODE_WRITE:
+        access_mode = GENERIC_WRITE;
+        share_mode = 0;
+        disposition = OPEN_ALWAYS;
+        break;
+    case MODE_SAFE:
+        access_mode = GENERIC_WRITE | GENERIC_READ;
+        share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
+        disposition = OPEN_ALWAYS;
+        break;
+    case MODE_CREATE:
+        access_mode = GENERIC_WRITE;
+        share_mode = 0;
+        disposition = CREATE_ALWAYS;
+        break;
+    default:
+        throw mm_io_error_c("Unknown open mode");
+    }
+
+    if ((MODE_WRITE == mode) || (MODE_CREATE == mode))
+        prepare_path(path);
+    file = (void *)CreateFileUtf8(path.c_str(), access_mode, share_mode, NULL,
+                                  disposition, 0, NULL);
+    _eof = false;
+    if ((HANDLE)file == (HANDLE)0xFFFFFFFF)
+        throw mm_io_open_error_c();
+
+    file_name = path;
+    dos_style_newlines = true;
+}
+
+void
+mm_file_io_c::close() {
+    if (NULL != file) {
+        CloseHandle((HANDLE)file);
+        file = NULL;
+    }
+    file_name = "";
+}
+
+uint64
+mm_file_io_c::get_real_file_pointer() {
+    LONG high = 0;
+    DWORD low;
+
+    low = SetFilePointer((HANDLE)file, 0, &high, FILE_CURRENT);
+    if ((low == INVALID_SET_FILE_POINTER) && (GetLastError() != NO_ERROR))
+        return (uint64)-1;
+
+    return (((uint64)high) << 32) | (uint64)low;
+}
+
+void
+mm_file_io_c::setFilePointer(int64 offset,
+                             seek_mode mode) {
+    DWORD method, low;
+    LONG high;
+
+    switch (mode) {
+    case seek_beginning:
+        method = FILE_BEGIN;
+        break;
+    case seek_current:
+        method = FILE_CURRENT;
+        break;
+    case seek_end:
+        method = FILE_END;
+        break;
+    default:
+        method = FILE_BEGIN;
+        break;
+    }
+
+    high = (LONG)(offset >> 32);
+    low = SetFilePointer((HANDLE)file, (LONG)(offset & 0xffffffff), &high,
+                         method);
+
+    if ((INVALID_SET_FILE_POINTER == low) && (GetLastError() != NO_ERROR))
+        throw mm_io_seek_error_c();
+
+    m_current_position = (int64_t)low + ((int64_t)high << 32);
+}
+
+uint32
+mm_file_io_c::read(void *buffer,
+                   size_t size) {
+    DWORD bytes_read;
+    fprintf (stderr, "you\n");
+    if (!ReadFile((HANDLE)file, buffer, size, &bytes_read, NULL)) {
+        _eof = true;
+        m_current_position = get_real_file_pointer();
+        return 0;
+    }
+
+    if (size != bytes_read)
+        _eof = true;
+
+    m_current_position += bytes_read;
+
+    return bytes_read;
+}
+
+size_t
+mm_file_io_c::write(const void *buffer,
+                    size_t size) {
+    DWORD bytes_written;
+
+    if (!WriteFile((HANDLE)file, buffer, size, &bytes_written, NULL))
+        bytes_written = 0;
+
+    if (bytes_written != size) {
+        DWORD error;
+        char *error_msg;
+        string error_msg_utf8;
+
+        error = GetLastError();
+        error_msg = NULL;
+        FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                      FORMAT_MESSAGE_FROM_SYSTEM |
+                      FORMAT_MESSAGE_IGNORE_INSERTS, NULL,
+                      error,
+                      MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                      (LPTSTR)&error_msg, 0, NULL);
+        if (error_msg != NULL) {
+            int idx;
+            idx = strlen(error_msg);
+            idx--;
+            while ((idx >= 0) &&
+                   ((error_msg[idx] == '\n') || (error_msg[idx] == '\r'))) {
+                error_msg[idx] = 0;
+                idx--;
+            }
+            error_msg_utf8 = to_utf8(cc_local_utf8, error_msg);
+        } else
+            error_msg_utf8 = "unknown";
+        mxerror("Could not write to the output file: %d (%s)\n", (int)error,
+                error_msg_utf8.c_str());
+        if (error_msg != NULL)
+            LocalFree(error_msg);
+    }
+
+    m_current_position += bytes_written;
+
+    return bytes_written;
+}
+
+bool
+mm_file_io_c::eof() {
+    return _eof;
+}
+
+int
+mm_file_io_c::truncate(int64_t pos) {
+    bool result;
+
+    save_pos();
+    if (setFilePointer2(pos)) {
+        result = SetEndOfFile((HANDLE)file);
+        restore_pos();
+        if (result)
+            return 0;
+        return -1;
+    }
+    restore_pos();
+    return -1;
+}
+
+void
+mm_file_io_c::setup() {
+}
+
+#endif // SYS_UNIX
+
+void
+mm_file_io_c::prepare_path(const string &path) {
+    string local_path = path; // contains copy of given path
+
+#if defined(SYS_WINDOWS)
+    bool first_part = true;
+    const string SEPARATOR ("\\");
+    // convert separators for current OS
+    std::replace(local_path.begin(), local_path.end(), '/', '\\');
+#else  // SYS_WINDOWS
+    const string SEPARATOR ("/");
+    // convert separators for current OS
+    std::replace(local_path.begin(), local_path.end(), '\\', '/');
+#endif // SYS_WINDOWS
+
+    // current position:
+    string::size_type position = local_path.find_first_of(SEPARATOR, 0);
+
+    while (position != string::npos) {
+        string subpath = local_path.substr(0, position);
+
+        if ((subpath.size() != 0) && !fs_entry_exists(subpath.c_str())
+#if defined(SYS_WINDOWS)
+            && (!first_part || (subpath.find_first_of(':') == string::npos))
+#endif // SYS_WINDOWS
+            )
+            create_directory(subpath.c_str());
+
+        position = local_path.find_first_of(SEPARATOR, position + 1);
+
+#if defined(SYS_WINDOWS)
+        first_part = false;
+#endif // SYS_WINDOWS
+    }
+}
+
+uint64
+mm_file_io_c::getFilePointer() {
+    return m_current_position;
+}
+
+mm_file_io_c::~mm_file_io_c() {
+    close();
+    file_name = "";
+}
+
+/*
+   Abstract base class.
+*/
+
+string
+mm_io_c::getline() {
+    char c;
+    string s;
+
+    if (eof())
+        throw mm_io_eof_error_c();
+
+    while (read(&c, 1) == 1) {
+        if (c == '\r')
+            continue;
+        if (c == '\n')
+            return s;
+        s += c;
+    }
+
+    return s;
+}
+
+bool
+mm_io_c::getline2(string &s) {
+    try {
+        s = getline();
+    } catch(...) {
+        return false;
+    }
+
+    return true;
+}
+
+bool
+mm_io_c::setFilePointer2(int64 offset, seek_mode mode) {
+    try {
+        setFilePointer(offset, mode);
+        return true;
+    } catch(...) {
+        return false;
+    }
+}
+
+size_t
+mm_io_c::puts(const string &s) {
+    int i;
+    const char *cs;
+    string output, h;
+
+    cs = s.c_str();
+    for (i = 0; cs[i] != 0; i++)
+        if (cs[i] != '\r') {
+#if defined(SYS_WINDOWS)
+            if ('\n' == cs[i])
+                output += "\r";
+#endif
+            output += cs[i];
+        } else if ('\n' != cs[i + 1])
+            output += "\r";
+
+    return write(output.c_str(), output.length());
+}
+
+uint32_t
+mm_io_c::read(string &buffer,
+              size_t size) {
+    char *cbuffer = new char[size + 1];
+    int nread;
+    fprintf (stderr, "you are\n");
+    nread = read(buffer, size);
+    if (nread < 0)
+        buffer = "";
+    else {
+        cbuffer[nread] = 0;
+        buffer = cbuffer;
+    }
+    delete [] cbuffer;
+
+    return nread;
+}
+
+unsigned char
+mm_io_c::read_uint8() {
+    unsigned char value;
+
+    if (read(&value, 1) != 1)
+        throw error_c("end-of-file");
+
+    return value;
+}
+
+uint16_t
+mm_io_c::read_uint16_le() {
+    unsigned char buffer[2];
+
+    if (read(buffer, 2) != 2)
+        throw error_c("end-of-file");
+
+    return get_uint16_le(buffer);
+}
+
+uint32_t
+mm_io_c::read_uint24_le() {
+    unsigned char buffer[3];
+
+    if (read(buffer, 3) != 3)
+        throw error_c("end-of-file");
+
+    return get_uint24_le(buffer);
+}
+
+uint32_t
+mm_io_c::read_uint32_le() {
+    unsigned char buffer[4];
+
+    if (read(buffer, 4) != 4)
+        throw error_c("end-of-file");
+
+    return get_uint32_le(buffer);
+}
+
+uint64_t
+mm_io_c::read_uint64_le() {
+    unsigned char buffer[8];
+
+    if (read(buffer, 8) != 8)
+        throw error_c("end-of-file");
+
+    return get_uint64_le(buffer);
+}
+
+uint16_t
+mm_io_c::read_uint16_be() {
+    unsigned char buffer[2];
+
+    if (read(buffer, 2) != 2)
+        throw error_c("end-of-file");
+
+    return get_uint16_be(buffer);
+}
+
+uint32_t
+mm_io_c::read_uint24_be() {
+    unsigned char buffer[3];
+
+    if (read(buffer, 3) != 3)
+        throw error_c("end-of-file");
+
+    return get_uint24_be(buffer);
+}
+
+uint32_t
+mm_io_c::read_uint32_be() {
+    unsigned char buffer[4];
+
+    if (read(buffer, 4) != 4)
+        throw error_c("end-of-file");
+
+    return get_uint32_be(buffer);
+}
+
+uint64_t
+mm_io_c::read_uint64_be() {
+    unsigned char buffer[8];
+
+    if (read(buffer, 8) != 8)
+        throw error_c("end-of-file");
+
+    return get_uint64_be(buffer);
+}
+
+uint32_t
+mm_io_c::read(memory_cptr &buffer,
+              size_t size,
+              int offset) {
+    if (-1 == offset)
+        offset = buffer->get_size();
+    if (buffer->get_size() <= (size + offset))
+        buffer->resize(size + offset);
+    if (read(buffer->get() + offset, size) != size)
+        throw mm_io_eof_error_c();
+    buffer->set_size(size + offset);
+    return size;
+}
+
+int
+mm_io_c::write_uint8(unsigned char value) {
+    return write(&value, 1);
+}
+
+int
+mm_io_c::write_uint16_le(uint16_t value) {
+    uint16_t buffer;
+
+    put_uint16_le(&buffer, value);
+    return write(&buffer, sizeof(uint16_t));
+}
+
+int
+mm_io_c::write_uint32_le(uint32_t value) {
+    uint32_t buffer;
+
+    put_uint32_le(&buffer, value);
+    return write(&buffer, sizeof(uint32_t));
+}
+
+int
+mm_io_c::write_uint64_le(uint64_t value) {
+    uint64_t buffer;
+
+    put_uint64_le(&buffer, value);
+    return write(&buffer, sizeof(uint64_t));
+}
+
+int
+mm_io_c::write_uint16_be(uint16_t value) {
+    uint16_t buffer;
+
+    put_uint16_be(&buffer, value);
+    return write(&buffer, sizeof(uint16_t));
+}
+
+int
+mm_io_c::write_uint32_be(uint32_t value) {
+    uint32_t buffer;
+
+    put_uint32_be(&buffer, value);
+    return write(&buffer, sizeof(uint32_t));
+}
+
+int
+mm_io_c::write_uint64_be(uint64_t value) {
+    uint64_t buffer;
+
+    put_uint64_be(&buffer, value);
+    return write(&buffer, sizeof(uint64_t));
+}
+
+uint32_t
+mm_io_c::write(const memory_cptr &buffer,
+               int size,
+               int offset) {
+    if (-1 == size)
+        size = buffer->get_size();
+    if (write(buffer->get() + offset, size) != size)
+        throw mm_io_eof_error_c();
+    return size;
+}
+
+void
+mm_io_c::skip(int64 num_bytes) {
+    int64_t pos;
+
+    pos = getFilePointer();
+    setFilePointer(pos + num_bytes);
+    if ((pos + num_bytes) != getFilePointer())
+        throw error_c("end-of-file");
+}
+
+void
+mm_io_c::save_pos(int64_t new_pos) {
+    positions.push(getFilePointer());
+
+    if (new_pos != -1)
+        setFilePointer(new_pos);
+}
+
+bool
+mm_io_c::restore_pos() {
+    if (positions.size() == 0)
+        return false;
+
+    setFilePointer(positions.top());
+    positions.pop();
+
+    return true;
+}
+
+bool
+mm_io_c::write_bom(const string &charset) {
+    const unsigned char utf8_bom[3] = {0xef, 0xbb, 0xbf};
+    const unsigned char utf16le_bom[2] = {0xff, 0xfe};
+    const unsigned char utf16be_bom[2] = {0xfe, 0xff};
+    const unsigned char utf32le_bom[4] = {0xff, 0xfe, 0x00, 0x00};
+    const unsigned char utf32be_bom[4] = {0x00, 0x00, 0xff, 0xfe};
+    const unsigned char *bom;
+    int bom_len;
+
+    if (charset == "")
+        return false;
+
+    if ((charset =="UTF-8") || (charset =="UTF8")) {
+        bom_len = 3;
+        bom = utf8_bom;
+    } else if ((charset =="UTF-16") || (charset =="UTF-16LE") ||
+               (charset =="UTF16") || (charset =="UTF16LE")) {
+        bom_len = 2;
+        bom = utf16le_bom;
+    } else if ((charset =="UTF-16BE") || (charset =="UTF16BE")) {
+        bom_len = 2;
+        bom = utf16be_bom;
+    } else if ((charset =="UTF-32") || (charset =="UTF-32LE") ||
+               (charset =="UTF32") || (charset =="UTF32LE")) {
+        bom_len = 4;
+        bom = utf32le_bom;
+    } else if ((charset =="UTF-32BE") || (charset =="UTF32BE")) {
+        bom_len = 4;
+        bom = utf32be_bom;
+    } else
+        return false;
+
+    return (write(bom, bom_len) == bom_len);
+}
+
+int64_t
+mm_io_c::get_size() {
+    int64_t size;
+
+    save_pos();
+    setFilePointer(0, seek_end);
+    size = getFilePointer();
+    restore_pos();
+
+    return size;
+}
+
+int
+mm_io_c::getch() {
+    unsigned char c;
+
+    if (read(&c, 1) != 1)
+        return -1;
+
+    return c;
+}
+
+int
+mm_io_c::printf(const char *fmt,
+                ...) {
+    va_list ap;
+    string new_fmt, s;
+    char *new_string;
+    int len, pos;
+
+    fix_format(fmt, new_fmt);
+    va_start(ap, fmt);
+    len = get_varg_len(new_fmt.c_str(), ap);
+    new_string = (char *)safemalloc(len + 1);
+    vsprintf(new_string, new_fmt.c_str(), ap);
+    va_end(ap);
+    s = new_string;
+    safefree(new_string);
+    if (dos_style_newlines) {
+        pos = 0;
+        while ((pos = s.find('\n', pos)) >= 0) {
+            s.replace(pos, 1, "\r\n");
+            pos += 2;
+        }
+    }
+
+    return write(s.c_str(), s.length());
+}
+
+/*
+   Proxy class that does I/O on a mm_io_c handed over in the ctor.
+   Useful for e.g. doing text I/O on other I/Os (file, mem).
+*/
+
+void
+mm_proxy_io_c::close() {
+    if (proxy_io == NULL)
+        return;
+    if (proxy_delete_io)
+        delete proxy_io;
+    proxy_io = NULL;
+}
+
+/*
+   Dummy class for output to /dev/null. Needed for two pass stuff.
+*/
+
+mm_null_io_c::mm_null_io_c() {
+    pos = 0;
+}
+
+uint64
+mm_null_io_c::getFilePointer() {
+    return pos;
+}
+
+void
+mm_null_io_c::setFilePointer(int64 offset,
+                             seek_mode mode) {
+    if (mode == seek_beginning)
+        pos = offset;
+    else if (mode == seek_end)
+        pos = 0;
+    else
+        pos += offset;
+}
+
+uint32
+mm_null_io_c::read(void *buffer,
+                   size_t size) {
+    memset(buffer, 0, size);
+    pos += size;
+
+    return size;
+}
+
+size_t
+mm_null_io_c::write(const void *buffer,
+                    size_t size) {
+    pos += size;
+
+    return size;
+}
+
+void
+mm_null_io_c::close() {
+}
+
+/*
+   IO callback class working on memory
+*/
+mm_mem_io_c::mm_mem_io_c(unsigned char *_mem,
+                         uint64_t _mem_size,
+                         int _increase):
+    pos(0),
+    mem_size(_mem_size),
+    allocated(_mem_size),
+    increase(_increase),
+    mem(_mem),
+    ro_mem(NULL),
+    read_only(false) {
+
+    if (increase <= 0)
+        throw error_c("wrong usage: increase < 0");
+
+    if ((mem == NULL) && (increase > 0)) {
+        mem = (unsigned char *)safemalloc(mem_size);
+        free_mem = true;
+    } else
+        free_mem = false;
+}
+
+mm_mem_io_c::mm_mem_io_c(const unsigned char *_mem,
+                         uint64_t _mem_size) :
+    pos(0),
+    mem_size(_mem_size),
+    allocated(_mem_size),
+    increase(0),
+    mem(NULL),
+    ro_mem(_mem),
+    free_mem(false),
+    read_only(true) {
+
+    if (ro_mem == NULL)
+        throw error_c("wrong usage: read-only with NULL memory");
+}
+
+mm_mem_io_c::~mm_mem_io_c() {
+    close();
+}
+
+uint64_t
+mm_mem_io_c::getFilePointer() {
+    return pos;
+}
+
+void
+mm_mem_io_c::setFilePointer(int64 offset,
+                            seek_mode mode) {
+    int64_t npos;
+
+    if (((mem == NULL) && (ro_mem == NULL)) || (mem_size == 0))
+        throw error_c("wrong usage: read-only with NULL memory");
+
+    if (mode == seek_beginning)
+        npos = offset;
+    else if (mode == seek_end)
+        npos = mem_size - offset;
+    else
+        npos = pos + offset;
+
+    if (npos < 0)
+        pos = 0;
+    else if (npos >= mem_size)
+        pos = mem_size;
+    else
+        pos = npos;
+}
+
+uint32
+mm_mem_io_c::read(void *buffer,
+                  size_t size) {
+    int64_t rbytes;
+
+    rbytes = (pos + size) >= mem_size ? mem_size - pos : size;
+    if (read_only)
+        memcpy(buffer, &ro_mem[pos], rbytes);
+    else
+        memcpy(buffer, &mem[pos], rbytes);
+    pos += rbytes;
+
+    return rbytes;
+}
+
+size_t
+mm_mem_io_c::write(const void *buffer,
+                   size_t size) {
+    int64_t wbytes;
+
+    if (read_only)
+        throw error_c("wrong usage: writing to read-only memory");
+
+    if ((pos + size) >= allocated) {
+        if (increase) {
+            int64_t new_allocated;
+
+            new_allocated = pos + size - allocated;
+            new_allocated = ((new_allocated / increase) + 1 ) * increase;
+            allocated += new_allocated;
+            mem = (unsigned char *)saferealloc(mem, allocated);
+            wbytes = size;
+        } else
+            wbytes = allocated - pos;
+    } else
+        wbytes = size;
+    if ((pos + size) > mem_size)
+        mem_size = pos + size;
+    memcpy(&mem[pos], buffer, wbytes);
+    pos += wbytes;
+
+    return wbytes;
+}
+
+void
+mm_mem_io_c::close() {
+    if (free_mem)
+        safefree(mem);
+    mem = NULL;
+    ro_mem = NULL;
+    read_only = true;
+    free_mem = false;
+    mem_size = 0;
+    increase = 0;
+    pos = 0;
+}
+
+bool
+mm_mem_io_c::eof() {
+    return pos >= mem_size;
+}
+
+unsigned char *
+mm_mem_io_c::get_and_lock_buffer() {
+    free_mem = false;
+    return mem;
+}
+
+
+/*
+ * Ring buffer io functions.
+ *
+ */
+
+mm_ringbuffer_io_c::mm_ringbuffer_io_c(unsigned char *_buf, uint64_t _buf_size):
+    m_pbuf (_buf),
+    m_size (_buf_size),
+    m_balloc (false),
+    m_data_needed(0),
+    m_free_needed(0),
+    mb_pre_buffering(false),
+    m_pre_buffer_size(-1)
+{
+    assert (_buf_size > 0);
+    if (NULL == m_pbuf) {
+        fprintf (stderr, "Alloc %lld memory for ringbuffer!\n", m_size);
+        m_pbuf = new uint8_t[m_size];
+        assert (m_pbuf != NULL);
+        m_balloc = true;
+    }
+    
+    m_pdata = m_pempty = m_pbuf;
+    *m_pempty = 0;
+    
+    pthread_cond_init (&m_data_cond, NULL);
+    pthread_cond_init (&m_free_cond, NULL);
+    pthread_cond_init (&m_pre_buffer_cond, NULL);
+
+    pthread_mutex_init (&m_lock, NULL);    
+}
+
+mm_ringbuffer_io_c::~mm_ringbuffer_io_c() {
+    flush ();
+
+    pthread_cond_destroy (&m_free_cond);
+    pthread_cond_destroy (&m_data_cond);
+    pthread_cond_destroy (&m_pre_buffer_cond);
+
+    pthread_mutex_destroy (&m_lock);
+    
+    if (m_balloc) {
+        fprintf (stderr, "Delete the memory allocated for the ringbuffer!\n");
+        delete[] m_pbuf;
+    }
+}
+
+uint64 mm_ringbuffer_io_c::getFilePointer() {
+    int  ret = 0;
+
+    pthread_mutex_lock (&m_lock);
+    int*p=(int*)m_pempty;
+    pthread_mutex_unlock (&m_lock);
+
+    return ret;
+}
+
+
+void mm_ringbuffer_io_c::setFilePointer(int64 offset, seek_mode mode) {
+    
+}
+
+// In order not to add another interface, We use the flush function to reset the ringbuffer
+// 
+void mm_ringbuffer_io_c::flush () {
+    pthread_mutex_lock (&m_lock);
+
+    m_pdata = m_pempty = m_pbuf;
+    *m_pempty = 0;
+    memset (m_pbuf, 0, m_size);
+    if (m_free_needed)
+        pthread_cond_broadcast (&m_free_cond);
+
+    if (m_data_needed)
+        pthread_cond_broadcast (&m_data_cond);
+
+    pthread_mutex_unlock (&m_lock);
+}
+
+uint32 mm_ringbuffer_io_c::pre_buffer (float percent) {
+    pthread_mutex_lock (&m_lock);
+    struct timeval now;
+    struct timespec ts;
+    int data_size = 0;
+
+    if (m_pdata <= m_pempty) {
+        data_size = m_pempty - m_pdata;
+    } else {
+        data_size = m_pempty + m_size - m_pdata;
+    }
+    fprintf (stderr, "%s %d!\n", __FUNCTION__, __LINE__);
+
+    m_pre_buffer_size = (int)(m_size*percent);
+
+    fprintf (stderr, "%s %d: Prebuffering..., data_size = %d, pre buffer size = %d(%d/%f)!\n", __FUNCTION__, __LINE__, data_size, m_pre_buffer_size, m_size, percent);    
+
+    if (data_size < m_pre_buffer_size) {
+        gettimeofday (&now, NULL);
+        ts.tv_sec = now.tv_sec;
+        ts.tv_nsec = now.tv_usec*1000;
+
+        ts.tv_sec += 10;
+        mb_pre_buffering = true;
+
+        fprintf (stderr, "%s %d: Prebuffering..., pre buffer size = %d(%d/%f)!\n", __FUNCTION__, __LINE__, m_pre_buffer_size, m_size, percent);    
+        pthread_cond_timedwait (&m_pre_buffer_cond, &m_lock, &ts);
+        fprintf (stderr, "%s %d: Prebuffer finished, pre buffer size = %d!\n", __FUNCTION__, __LINE__, m_pre_buffer_size);    
+    
+        mb_pre_buffering = false;
+        m_pre_buffer_size = -1;
+    }
+
+    pthread_mutex_unlock (&m_lock);
+}
+
+uint32 mm_ringbuffer_io_c::read(void *buffer, size_t size) {
+    int data_size, data_size1, data_size2;
+    int ret = 0;
+    unsigned char *buf = (unsigned char *)buffer;
+
+    assert((buffer != NULL) && (size > 0));
+    
+    // Lock
+    pthread_mutex_lock (&m_lock);
+
+    //monitor ();
+    
+    do {
+        if (m_pdata <= m_pempty) {
+            data_size = m_pempty - m_pdata;
+            data_size1 = data_size;
+            data_size2 = 0;
+        } else {
+            data_size = m_pempty + m_size - m_pdata;
+            data_size2 = m_pempty - m_pbuf;
+            data_size1 = data_size - data_size2;
+        }
+
+        // We need more data to read
+        if (size > data_size) {
+            m_data_needed++;
+            //fprintf (stderr, "We need more data to read! size = %d, data_size = %d\n", size, data_size);
+            //monitor ();
+            pthread_cond_wait (&m_data_cond, &m_lock);
+            //fprintf (stderr, "New data available, recheck...!\n");
+            m_data_needed--;
+            continue;
+        }
+        
+        // Yeah, we have got enough data to read
+        break;
+    } while (1);
+
+    if (size > data_size1) {
+        memcpy (buf, m_pdata, data_size1);
+        m_pdata += data_size1;
+        if (m_pdata >= (m_pbuf + m_size))
+            m_pdata -= m_size;
+        ret += data_size1;
+    } else {
+        memcpy (buf, m_pdata, size);
+        m_pdata += size;
+        if (m_pdata >= (m_pbuf + m_size))
+            m_pdata -= m_size;
+        
+        // HAHA we have read the data and let's go home
+        pthread_mutex_unlock (&m_lock);
+
+        // Notify new free available
+        if (m_free_needed)
+            pthread_cond_broadcast (&m_free_cond);
+
+        return size;
+    }
+
+    if (!data_size2) {
+        pthread_mutex_unlock (&m_lock);
+
+        // Notify new free available
+        if (m_free_needed)
+            pthread_cond_broadcast (&m_free_cond);
+        
+        return ret;
+    }
+
+    // Got other part of data
+    if ((size - ret) <= data_size2) {
+        memcpy (buf+data_size1, m_pbuf, (size - ret));
+        m_pdata += (size - ret);
+        ret += (size - ret);
+
+        // HAHA we have read the data and let's go home
+        pthread_mutex_unlock (&m_lock);
+
+        // Notify new free available
+        if (m_free_needed)
+            pthread_cond_broadcast (&m_free_cond);
+
+        return ret;
+    }
+
+    // Something wrong occured, we got nothing :(
+    pthread_mutex_unlock (&m_lock);
+    return 0;
+}
+
+size_t mm_ringbuffer_io_c::write(const void *buffer, size_t size) {
+    int empty_size, empty_size1, empty_size2;
+    int ret = 0;
+
+    unsigned char *buf = (unsigned char *)buffer;
+
+    assert((buffer != NULL) && (size > 0));
+
+    // Lock
+    pthread_mutex_lock (&m_lock);
+    //monitor ();
+
+    do {
+        if (m_pdata <= m_pempty) {
+            empty_size = m_size - (m_pempty - m_pdata) - 1;
+            empty_size2 = (m_pdata == m_pbuf) ? 0 : (m_pdata - m_pbuf - 1);
+            empty_size1 = empty_size - empty_size2;
+        } else {
+            empty_size = (m_pdata - m_pempty) - 1;
+            empty_size1 = empty_size;
+            empty_size2 = 0;
+        }
+
+        if (mb_pre_buffering && (m_size - empty_size) >= m_pre_buffer_size) {
+            
+            // Pre buffer finished, release the lock and notify demuxer
+            pthread_mutex_unlock (&m_lock);
+
+            // Notify more data now available
+            pthread_cond_broadcast (&m_pre_buffer_cond);
+            
+            // Lock again, continue our work
+            pthread_mutex_lock (&m_lock);
+        }
+
+        // We need more free space to write
+        if (empty_size < size) {
+            m_free_needed++;
+            //fprintf (stderr, "We need more %ld bytes(total %d) space to write, now waiting...\n", size - empty_size, m_size);
+            //monitor ();
+
+            // Before waiting, release the prebuffer cond
+            if (mb_pre_buffering) {
+            
+                // Pre buffer finished, release the lock and notify demuxer
+                pthread_mutex_unlock (&m_lock);
+
+                // Notify more data now available
+                pthread_cond_broadcast (&m_pre_buffer_cond);
+            
+                // Lock again, continue our work
+                pthread_mutex_lock (&m_lock);
+            }
+
+            pthread_cond_wait (&m_free_cond, &m_lock);
+            //fprintf (stderr, "Free space available, recheck...\n");
+            m_free_needed--;
+            continue;
+        } else 
+            break;
+    } while (1);
+
+    if (size > empty_size1) {
+        memcpy (m_pempty, buf, empty_size1);
+        m_pempty += empty_size1;
+        if (m_pempty >= (m_pbuf + m_size))
+            m_pempty -= m_size;
+        ret += empty_size1;
+    } else {
+        memcpy (m_pempty, buf, size);
+        m_pempty += size;
+        if (m_pempty >= m_pbuf + m_size)
+            m_pempty -= m_size;
+        *(m_pempty) = 0;
+
+        // HAHA, we have done the writing and let's go home
+        pthread_mutex_unlock (&m_lock);
+
+        // Notify more data now available
+        if (m_data_needed)
+            pthread_cond_broadcast (&m_data_cond);
+
+        return size;
+    }
+
+    if (!empty_size2) {
+        *(m_pempty) = 0;
+
+        // HAHA, we have done the writing and let's go home
+        pthread_mutex_unlock (&m_lock);
+
+        // Notify more data now available
+        if (m_data_needed)
+            pthread_cond_broadcast (&m_data_cond);
+        
+        return ret;
+    }
+
+    if ((size - ret) <= empty_size2) {
+        memcpy (m_pbuf, buf+empty_size1, (size - ret));
+        m_pempty += (size - ret);
+        *(m_pempty) = 0;
+        ret += (size - ret);
+
+        // HAHA, we have done the writing and let's go home
+        pthread_mutex_unlock (&m_lock);
+    
+        // Notify more data now available
+        if (m_data_needed)
+            pthread_cond_broadcast (&m_data_cond);
+
+        return ret;
+    }
+
+    // Hmm, something wrong happened
+    pthread_mutex_unlock (&m_lock);
+
+    return 0;
+}
+
+void mm_ringbuffer_io_c::close() {
+
+}
+
+bool mm_ringbuffer_io_c::eof() {
+    return false;
+}
+
+void mm_ringbuffer_io_c::monitor () {
+	fprintf (stderr, "[buffer_ptr       %s         %s   ]\n", (m_pdata > m_pempty)?"empt_ptr":"data_ptr", (m_pdata > m_pempty)?"data_ptr":"empt_ptr");
+	fprintf (stderr, "[0x%p     0x%p     0x%p]\n", m_pbuf, (m_pdata > m_pempty)? m_pempty:m_pdata, (m_pdata > m_pempty)? m_pdata:m_pempty);
+}
+
+unsigned char *mm_ringbuffer_io_c::get_and_lock_buffer() {
+
+    return m_pbuf;
+} 
+
+
+/*
+   Class for handling UTF-8/UTF-16/UTF-32 text files.
+*/
+
+mm_text_io_c::mm_text_io_c(mm_io_c *_in,
+                           bool _delete_in):
+  mm_proxy_io_c(_in, _delete_in),
+  byte_order(BO_NONE),
+  bom_len(0) {
+    unsigned char buffer[4];
+    int num_read;
+
+    _in->setFilePointer(0, seek_beginning);
+
+    num_read = _in->read(buffer, 4);
+    if (2 > num_read) {
+        _in->setFilePointer(0, seek_beginning);
+        return;
+    }
+
+    if ((3 <= num_read) &&
+        (buffer[0] == 0xef) && (buffer[1] == 0xbb) && (buffer[2] == 0xbf)) {
+        byte_order = BO_UTF8;
+        bom_len = 3;
+    } else if ((4 <= num_read) && (buffer[0] == 0xff) && (buffer[1] == 0xfe) &&
+               (buffer[2] == 0x00) && (buffer[3] == 0x00)) {
+        byte_order = BO_UTF32_LE;
+        bom_len = 4;
+    } else if ((4 <= num_read) && (buffer[0] == 0x00) && (buffer[1] == 0x00) &&
+               (buffer[2] == 0xfe) && (buffer[3] == 0xff)) {
+        byte_order = BO_UTF32_BE;
+        bom_len = 4;
+    } else if ((2 <= num_read) && (buffer[0] == 0xff) && (buffer[1] == 0xfe)) {
+        byte_order = BO_UTF16_LE;
+        bom_len = 2;
+    } else if ((2 <= num_read) && (buffer[0] == 0xfe) && (buffer[1] == 0xff)) {
+        byte_order = BO_UTF16_BE;
+        bom_len = 2;
+    }
+
+    _in->setFilePointer(bom_len, seek_beginning);
+}
+
+// 1 byte: 0xxxxxxx,
+// 2 bytes: 110xxxxx 10xxxxxx,
+// 3 bytes: 1110xxxx 10xxxxxx 10xxxxxx
+
+int
+mm_text_io_c::read_next_char(char *buffer) {
+    unsigned char stream[6];
+    unsigned long data;
+    int size, i;
+
+    if (byte_order == BO_NONE)
+        return read(buffer, 1);
+
+    size = 0;
+    if (byte_order == BO_UTF8) {
+        if (read(stream, 1) != 1)
+            return 0;
+        if ((stream[0] & 0x80) == 0)
+            size = 1;
+        else if ((stream[0] & 0xe0) == 0xc0)
+            size = 2;
+        else if ((stream[0] & 0xf0) == 0xe0)
+            size = 3;
+        else if ((stream[0] & 0xf8) == 0xf0)
+            size = 4;
+        else if ((stream[0] & 0xfc) == 0xf8)
+            size = 5;
+        else if ((stream[0] & 0xfe) == 0xfc)
+            size = 6;
+        else
+            die("mm_text_io_c::read_next_char(): Invalid UTF-8 char. First byte: "
+                "0x%02x", stream[0]);
+
+        if ((size > 1) && (read(&stream[1], size - 1) != (size - 1)))
+            return 0;
+
+        memcpy(buffer, stream, size);
+
+        return size;
+    } else if ((byte_order == BO_UTF16_LE) || (byte_order == BO_UTF16_BE))
+        size = 2;
+    else
+        size = 4;
+
+    if (read(stream, size) != size)
+        return 0;
+
+    data = 0;
+    if ((byte_order == BO_UTF16_LE) || (byte_order == BO_UTF32_LE))
+        for (i = 0; i < size; i++) {
+            data <<= 8;
+            data |= stream[size - i - 1];
+        }
+    else
+        for (i = 0; i < size; i++) {
+            data <<= 8;
+            data |= stream[i];
+        }
+
+
+    if (data < 0x80) {
+        buffer[0] = data;
+        return 1;
+    }
+
+    if (data < 0x800) {
+        buffer[0] = 0xc0 | (data >> 6);
+        buffer[1] = 0x80 | (data & 0x3f);
+        return 2;
+    }
+
+    if (data < 0x10000) {
+        buffer[0] = 0xe0 | (data >> 12);
+        buffer[1] = 0x80 | ((data >> 6) & 0x3f);
+        buffer[2] = 0x80 | (data & 0x3f);
+        return 3;
+    }
+
+    die("mm_text_io_c: UTF32_* is not supported at the moment.");
+
+    return 0;
+}
+
+string
+mm_text_io_c::getline() {
+    string s;
+    int len;
+    char utf8char[8];
+
+    if (eof())
+        throw error_c("end-of-file");
+
+    while (1) {
+        memset(utf8char, 0, 8);
+
+        len = read_next_char(utf8char);
+        if (len == 0)
+            return s;
+
+        if ((len == 1) && (utf8char[0] == '\r'))
+            continue;
+
+        if ((len == 1) && (utf8char[0] == '\n'))
+            return s;
+
+        s += utf8char;
+    }
+}
+
+byte_order_e
+mm_text_io_c::get_byte_order() {
+    return byte_order;
+}
+
+void
+mm_text_io_c::setFilePointer(int64 offset,
+                             seek_mode mode) {
+    if ((offset == 0) && (mode == seek_beginning))
+        mm_proxy_io_c::setFilePointer(bom_len, seek_beginning);
+    else
+        mm_proxy_io_c::setFilePointer(offset, seek_beginning);
+}
+
+/*
+   Class for reading from stdin & writing to stdout.
+*/
+
+mm_stdio_c::mm_stdio_c() {
+}
+
+uint64
+mm_stdio_c::getFilePointer() {
+    return 0;
+}
+
+void
+mm_stdio_c::setFilePointer(int64,
+                           seek_mode) {
+}
+
+uint32
+mm_stdio_c::read(void *buffer,
+                 size_t size) {
+    return fread(buffer, 1, size, stdin);
+}
+
+size_t
+mm_stdio_c::write(const void *buffer,
+                  size_t size) {
+#if defined(SYS_WINDOWS)
+    int i, bytes_written;
+    const char *s;
+
+    bytes_written = 0;
+    s = (const char *)buffer;
+    for (i = 0; i < size; ++i)
+        if (('\r' != s[i]) || ((i + 1) == size) || ('\n' != s[i + 1]))
+            bytes_written += fwrite(&s[i], 1, 1, stdout);
+
+    fflush(stdout);
+
+    return bytes_written;
+
+#else  // defined(SYS_WINDOWS)
+
+    return fwrite(buffer, 1, size, stdout);
+#endif // defined(SYS_WINDOWS)
+}
+
+void
+mm_stdio_c::close() {
+}
+
+void
+mm_stdio_c::flush() {
+    fflush(stdout);
+}

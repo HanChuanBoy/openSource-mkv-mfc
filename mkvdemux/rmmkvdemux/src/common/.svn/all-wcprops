@@ -1,0 +1,77 @@
+K 25
+svn:wc:ra_dav:version-url
+V 96
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common
+END
+common_memory.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 114
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/common_memory.cpp
+END
+mm_io.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 106
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/mm_io.cpp
+END
+random.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 107
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/random.cpp
+END
+os.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 103
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/os.cpp
+END
+base64.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 107
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/base64.cpp
+END
+wavpack_common.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 115
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/wavpack_common.cpp
+END
+checksums.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 110
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/checksums.cpp
+END
+common.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 107
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/common.cpp
+END
+commonebml.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 111
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/commonebml.cpp
+END
+theora_common.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 114
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/theora_common.cpp
+END
+Makefile
+K 25
+svn:wc:ra_dav:version-url
+V 105
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/Makefile
+END
+aac_common.cpp
+K 25
+svn:wc:ra_dav:version-url
+V 111
+/svn/DMC/!svn/ver/45/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux/src/common/aac_common.cpp
+END

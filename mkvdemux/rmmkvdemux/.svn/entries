@@ -1,0 +1,34 @@
+9
+
+dir
+74
+http://agooou.oicp.net/svn/DMC/trunk/DMC/mrua_EM8622L_2.8.2.0_dev.arm.nodts/MRUA_src/rmmkvdemux
+
+
+
+
+2008-07-07T15:21:36.034817Z
+45
+jackey
+
+
+svn:special svn:externals svn:needs-lock
+
+
+
+
+
+
+
+
+
+
+
+b2f61444-0c4b-0410-ad63-f8f0a2eacd15
+
+include
+dir
+
+src
+dir
+
