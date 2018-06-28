@@ -5,11 +5,40 @@
 #include <typeinfo>
 
 #include <unistd.h>
-
+#include <execinfo.h>
 #include "matroska_track.h"
 #include "matroska_demux.h"
 #include "xtr_base.h"
+size_t c_aml_strlcpy(char*dst,const char*src,size_t size)
+{
+	size_t len = 0;
+	while( ++len < size && *src) {
+		*dst++ = *src++;
+	}
+	if(len <= size)
+	{
+		*dst=0;
+	}
+	return len-1;
+}
 
+size_t c_aml_strlcat(char *dst, const char *src, size_t size)
+{
+    size_t len = strlen(dst);
+    printf("len=%d xuhang aa\n",len);
+    return len + c_aml_strlcpy(dst + len, src, size);
+}
+void print_stacktrace()
+{
+    pid_t myPid = getpid();
+    string pstackCommand= "pstack ";
+    string pid;
+    sprintf((char*)pid.c_str(),"%d",myPid);
+    printf("len=%d \n",strlen(pid.c_str()));
+    c_aml_strlcat((char*)pstackCommand.c_str(),pid.c_str(),strlen(pid.c_str())+1);
+    printf("pid ---xuhang =%s \n",pstackCommand.c_str());
+    system(pstackCommand.c_str());make_heap
+}
 /*
 string format_binary(EbmlBinary &bin, int max_len = 10) {
     int len, i;
@@ -64,7 +93,7 @@ void matroska_demux_c::read_master(EbmlMaster *m, EbmlStream *es, const EbmlSema
 matroska_track_c* matroska_demux_c::find_track(uint32_t tnum) {
     if (m_tracks.size() == 0)
         return NULL;
-    
+    print_stacktrace();
     for (vector<matroska_track_c *>::iterator i=m_tracks.begin(); i<m_tracks.end(); i++) {
         if (((matroska_track_c *)*i)->m_track_num == tnum)
             return ((matroska_track_c *)*i);
@@ -94,7 +123,8 @@ void matroska_demux_c::handle_cues (mm_io_c *&in, EbmlStream *&es, int &upper_lv
     uint64_t pos = 0;
     uint64_t timecode = 0;
     bool key = false;
-
+    printf("timecode=%s\n", timecode);
+    print_stacktrace();
     upper_lvl_el = 0;
     m1 = static_cast<EbmlMaster *>(l1);
     read_master(m1, es, l1->Generic().Context, upper_lvl_el, l3);
@@ -744,6 +774,7 @@ void matroska_demux_c::handle_cluster (mm_io_c *&in, EbmlStream *&es, int &upper
             handle_blockgroup(*static_cast<KaxBlockGroup *>(l2), *cluster, m_timecode_scale);
         } else if (is_id(l2, KaxSimpleBlock)) {
             printf("l2->KaxSimpleBlock() i1 =%d\n",i1);
+			print_stacktrace();
 			if(i1==242)
 			  int d=1;
             l2->Read(*es, KaxSimpleBlock::ClassInfos.Context, upper_lvl_el, l3, true);
