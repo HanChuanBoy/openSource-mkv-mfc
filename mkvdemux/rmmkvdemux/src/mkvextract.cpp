@@ -152,8 +152,8 @@ int main(int argc, char **argv) {
     pthread_create (&demux_pthread, &demux_attr, &demux_func, (void *)pdemux);
 
     // Got the demux thread running
-    
-    pdemux->Seek (0);
+    //if you want dump video track you should  close seek;
+    //pdemux->Seek (0);
     string command;
     int seek = 0;
 	size_t vsize;

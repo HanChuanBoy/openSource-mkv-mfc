@@ -28,6 +28,8 @@ size_t c_aml_strlcat(char *dst, const char *src, size_t size)
     printf("len=%d xuhang aa\n",len);
     return len + c_aml_strlcpy(dst + len, src, size);
 }
+
+
 void print_stacktrace()
 {
     pid_t myPid = getpid();
@@ -37,7 +39,7 @@ void print_stacktrace()
     printf("len=%d \n",strlen(pid.c_str()));
     c_aml_strlcat((char*)pstackCommand.c_str(),pid.c_str(),strlen(pid.c_str())+1);
     printf("pid ---xuhang =%s \n",pstackCommand.c_str());
-    system(pstackCommand.c_str());make_heap
+    system(pstackCommand.c_str());
 }
 /*
 string format_binary(EbmlBinary &bin, int max_len = 10) {
@@ -93,7 +95,7 @@ void matroska_demux_c::read_master(EbmlMaster *m, EbmlStream *es, const EbmlSema
 matroska_track_c* matroska_demux_c::find_track(uint32_t tnum) {
     if (m_tracks.size() == 0)
         return NULL;
-    print_stacktrace();
+    //print_stacktrace();
     for (vector<matroska_track_c *>::iterator i=m_tracks.begin(); i<m_tracks.end(); i++) {
         if (((matroska_track_c *)*i)->m_track_num == tnum)
             return ((matroska_track_c *)*i);
@@ -321,7 +323,9 @@ void matroska_demux_c::handle_audio_track (mm_io_c *&in, EbmlStream *&es, int &u
 
     } // while (l4 != NULL)
 }
-
+/***
+   when handle_video_track we need to OpenTrack and establish the extractor;
+**/
 void matroska_demux_c::handle_video_track (mm_io_c *&in, EbmlStream *&es, int &upper_lvl_el, 
                                            EbmlElement *&l3, EbmlElement *&l4, matroska_track_c *&ptrack) {
     EbmlMaster *m3;
@@ -398,10 +402,16 @@ void matroska_demux_c::handle_video_track (mm_io_c *&in, EbmlStream *&es, int &u
 
         } //else if (!is_global(es, l4, 4))
         //show_unknown_element(l4, 4);
-
     } // while (l4 != NULL)
+    printf("GetVideoTrackID =%d \n",GetVideoTrackID());
+    matroska_track_c * ptract=GetTrackByID(GetVideoTrackID());
+	printf("track =%p \n",ptract);
+    OpenTrack(ptract);
 }
 
+/**
+   mb_tracks_found should be true when be parsed;
+**/
 void matroska_demux_c::handle_tracks (mm_io_c *&in, EbmlStream *&es, int &upper_lvl_el, 
 	EbmlElement *&l1, EbmlElement *&l2, EbmlElement *&l3, EbmlElement *&l4) {
     EbmlMaster *m1, *m2;
@@ -412,7 +422,7 @@ void matroska_demux_c::handle_tracks (mm_io_c *&in, EbmlStream *&es, int &upper_
         fprintf (stderr, "Tracks already parsed!\n");
         return;
     }
-
+    //print_stacktrace();
     // Yep, we've found our KaxTracks element. Now find all tracks
     // contained in this segment.
     upper_lvl_el = 0;
@@ -565,6 +575,9 @@ void matroska_demux_c::handle_tracks (mm_io_c *&in, EbmlStream *&es, int &upper_
     mb_tracks_found = true;
 }
 
+/***
+   handle_blockgroup  finally we will handle_frame by extractor we have establish when handle_video_track;
+**/
 void matroska_demux_c::handle_blockgroup(KaxBlockGroup &blockgroup, KaxCluster &cluster, uint64_t tc_scale) {
     KaxBlock *block;
     KaxBlockDuration *kduration;
@@ -727,7 +740,7 @@ void matroska_demux_c::handle_cluster (mm_io_c *&in, EbmlStream *&es, int &upper
     int i1;
 
     cluster = (KaxCluster *)l1;
-    printf("handle_cluster \n");
+    printf("%d handle_cluster \n",__LINE__);
     upper_lvl_el = 0;
     m1 = static_cast<EbmlMaster *>(l1);
     read_master(m1, es, l1->Generic().Context, upper_lvl_el, l3);
@@ -774,7 +787,7 @@ void matroska_demux_c::handle_cluster (mm_io_c *&in, EbmlStream *&es, int &upper
             handle_blockgroup(*static_cast<KaxBlockGroup *>(l2), *cluster, m_timecode_scale);
         } else if (is_id(l2, KaxSimpleBlock)) {
             printf("l2->KaxSimpleBlock() i1 =%d\n",i1);
-			print_stacktrace();
+			//print_stacktrace();
 			if(i1==242)
 			  int d=1;
             l2->Read(*es, KaxSimpleBlock::ClassInfos.Context, upper_lvl_el, l3, true);
@@ -1008,8 +1021,10 @@ MKV_RT matroska_demux_c::PreparePlayback () {
         mp_es->I_O().setFilePointer (m_cues_position, seek_beginning);
         mp_l1 = mp_es->FindNextElement(mp_l0->Generic().Context, upper_lvl_el, 0xFFFFFFFFL, true);        
         if ((mp_l1 != NULL) && (upper_lvl_el <= 0)) {
-            if (is_id (mp_l1, KaxCues))
+            if (is_id (mp_l1, KaxCues)) {
+				printf("mp_l1->Generic().GlobalId =%04x \n ",mp_l1->Generic().GlobalId);
                 handle_cues (mp_io_in, mp_es, upper_lvl_el, mp_l1, mp_l2, mp_l3, mp_l4, mp_l5);
+            }
         }
         delete mp_l1;
         mp_l1 = NULL;
@@ -1027,14 +1042,16 @@ MKV_RT matroska_demux_c::PreparePlayback () {
 ///
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+/*** 
+   we need to add print for matracks;
+***/
 matroska_track_c* matroska_demux_c::GetTrackByID (uint32_t trackID) {
     matroska_track_c *ptrack = NULL;
-
     for (vector<matroska_track_c *>::iterator i=m_tracks.begin(); i<m_tracks.end(); i++) {
         ptrack = (matroska_track_c *)(*i);
-
+        fprintf (stderr, "%s %s %d! ptrack=%p \n", __FILE__, __FUNCTION__, __LINE__,ptrack);
         if (ptrack->m_track_num == trackID) {
-            fprintf (stderr, "%s %s %d!\n", __FILE__, __FUNCTION__, __LINE__);
+            fprintf (stderr, "%s %s %d! ptrack=%p \n", __FILE__, __FUNCTION__, __LINE__,ptrack);
             return ptrack;
         }
     }
@@ -1121,6 +1138,11 @@ int matroska_demux_c::open_subtitle_track (matroska_track_c *ptrack) {
     return 0;
 }
 
+/**
+  fprintf (stderr,"%s %s %d!\n", __FILE__, __FUNCTION__, __LINE__);
+   printf ("ptrack->mp_extractor =%s \n",outname);
+   check the outfile name;
+*/
 int matroska_demux_c::open_extractor (matroska_track_c *ptrack) {
     struct track_spec_t tspec;
     char outname[16];
@@ -1129,10 +1151,9 @@ int matroska_demux_c::open_extractor (matroska_track_c *ptrack) {
     tspec.tid = ptrack->m_track_num;
     tspec.tuid = ptrack->m_track_uid;
     tspec.out_name = outname;
-    fprintf (stderr, "%s %s %d!\n", __FILE__, __FUNCTION__, __LINE__);
+    fprintf (stderr,"%s %s %d!\n", __FILE__, __FUNCTION__, __LINE__);
 
-    ptrack->mp_extractor = xtr_base_c::create_extractor (ptrack->m_codec_id, ptrack->m_track_num, tspec);
-
+    ptrack->mp_extractor = xtr_base_c::create_extractor (ptrack->m_codec_id, ptrack->m_track_num, tspec);  
     if (NULL == ptrack->mp_extractor) {
         fprintf (stderr, "Extraction of track number %d with the CodecID '%s' is not supported.\n", ptrack->m_track_num, ptrack->m_codec_id.c_str());
         return -1;
@@ -1163,7 +1184,7 @@ MKV_RT matroska_demux_c::DumpTracks () {
     printf ("================================== %02ld Tracks ====================================\n", m_tracks.size ());
     for (vector<matroska_track_c *>::iterator i=m_tracks.begin(); i<m_tracks.end(); i++) {
         matroska_track_c *ptrack = ((matroska_track_c *)*i);
-        ptrack->dump_track ();
+        ptrack->dump_track();
     }
     printf ("==================================================================================\n");
 
@@ -1176,7 +1197,6 @@ int matroska_demux_c::track_get_next_frame (matroska_track_c *ptrack, uint8_t *b
     xtr_base_c *extractor = ptrack->mp_extractor;
     if (NULL == extractor)
         return -1;
-
     return extractor->get_next_frame (buffer, size);
 }
 
