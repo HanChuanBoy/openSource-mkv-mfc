@@ -1069,10 +1069,11 @@ matroska_track_c* matroska_demux_c::OpenTrack (matroska_track_c *ptrack) {
             fprintf (stderr, "%s %s %d!\n", __FILE__, __FUNCTION__, __LINE__);
 
             mp_video_track = ptrack;
+			if (ptrack->m_codec_id == MKV_V_MSCOMP)
+			   ptrack->mp_extractor->dump_out = new mm_file_io_c("outvideo.file", MODE_CREATE);
             break;
         case MATROSKA_TRACK_TYPE_AUDIO:
             fprintf (stderr, "%s %s %d!\n", __FILE__, __FUNCTION__, __LINE__);
-
             mp_audio_track = ptrack;
             break;
         default:
@@ -1151,7 +1152,7 @@ int matroska_demux_c::open_extractor (matroska_track_c *ptrack) {
     tspec.tid = ptrack->m_track_num;
     tspec.tuid = ptrack->m_track_uid;
     tspec.out_name = outname;
-    fprintf (stderr,"%s %s %d!\n", __FILE__, __FUNCTION__, __LINE__);
+    printf ("[%d:%s]outname%s\n", __FILE__, __FUNCTION__,outname);
 
     ptrack->mp_extractor = xtr_base_c::create_extractor (ptrack->m_codec_id, ptrack->m_track_num, tspec);  
     if (NULL == ptrack->mp_extractor) {

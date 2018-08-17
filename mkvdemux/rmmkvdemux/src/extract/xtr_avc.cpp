@@ -92,16 +92,15 @@ void xtr_avc_c::create_file(xtr_base_c *_master, matroska_track_c *ptrack) {
                 errno, strerror(errno));
     }
 
-/*
+
     char filename[32];
     sprintf (filename, "%s.out", codec_id.c_str());
     try {
-        fprintf (stderr, "Create dump out %s for track!\n", filename);
         dump_out = new mm_file_io_c(filename, MODE_CREATE);
     } catch(...) {
         mxerror("Failed to create the dump file: %s, %d (%s)\n", filename, errno, strerror(errno));
     }
-*/
+
     default_duration = ptrack->m_default_duration;
 
     if (NULL == ptrack->mp_codec_private || ptrack->m_codec_private_len < 6)

@@ -54,7 +54,6 @@ xtr_base_c::~xtr_base_c() {
 
 void
 xtr_base_c::create_file(xtr_base_c *_master, matroska_track_c *ptrack) {
-    fprintf (stderr, "%s %d\n", __FUNCTION__, __LINE__);
     try {
         out = new mm_ringbuffer_io_c(ptrack->mp_cache_buffer, ptrack->m_cache_buffer_size);
     } catch(...) {
@@ -63,7 +62,6 @@ xtr_base_c::create_file(xtr_base_c *_master, matroska_track_c *ptrack) {
     }
 
     default_duration = ptrack->m_default_duration;
-    fprintf (stderr, "%s %d\n", __FUNCTION__, __LINE__);
 }
 
 void

@@ -179,9 +179,7 @@ uint32
 mm_file_io_c::read(void *buffer,
                    size_t size) {
     int64_t bread;
-    fprintf (stderr, "Alloc memory for ringbuffer!\n");
     bread = fread(buffer, 1, size, (FILE *)file);
-    fprintf (stderr, "you\n");
 # if HAVE_POSIX_FADVISE
     if (use_posix_fadvise && use_posix_fadvise_here && (0 <= bread)) {
         read_count += bread;
