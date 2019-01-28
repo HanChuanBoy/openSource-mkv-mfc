@@ -46,6 +46,7 @@
 #include "id3v2.h"
 #include "internal.h"
 #include "metadata.h"
+#define DumpExtractData
 #if CONFIG_NETWORK
 #include "network.h"
 #endif
@@ -3245,8 +3246,22 @@ int ff_get_extradata(AVFormatContext *s, AVCodecParameters *par, AVIOContext *pb
         par->extradata_size = 0;
         av_log(s, AV_LOG_ERROR, "Failed to read extradata of size %d\n", size);
         return ret < 0 ? ret : AVERROR_INVALIDDATA;
+    } 
+#ifdef DumpExtractData
+	FILE *fp = NULL;
+	if (par->codec_type == AVMEDIA_TYPE_VIDEO) {
+		fp= fopen("./extradata_video.raw", "wb+");
+	} else {
+        fp = fopen("./extradata_audio.raw", "wb+");
     }
-
+    fwrite(par->extradata,size, 1, fp);
+	if (ferror(fp)){
+        av_log(NULL, AV_LOG_WARNING, "write error\n");
+        fclose(fp);
+	}
+	fflush(fp);
+	fclose(fp);
+#endif
     return ret;
 }
 
